@@ -1,0 +1,1228 @@
+---
+title: "EDA of Monica Dataset"
+author: "DATAPROS"
+output: html_document
+---
+
+
+```{r basicfcn, include=F}
+# can add quietly=T option to the require() function
+loadPkg = function(x) { if (!require(x,character.only=T, quietly =T)) { install.packages(x,dep=T,repos="http://cran.us.r-project.org"); if(!require(x,character.only=T)) stop("Package not found") } }
+```
+
+```{r setup, include=F}
+knitr::opts_chunk$set(echo = TRUE)
+monica <- data.frame(read.csv("D:/GWU/INRO TO DATA SCIENCE/PROJECT/monica.csv", header = TRUE, stringsAsFactors = F))
+library(dplyr)
+library(ggplot2)
+library(plyr)
+library(corrplot)
+```
+
+# Inspect dataset: Data Dictionary
+```{r 1, echo=FALSE}
+names(monica)
+#head(monica, 10)
+#tail(monica, 10)
+str(monica)
+library(reshape2)
+monica_pivot <- melt(monica, id.vars = c("outcome", "sex","age","yronset"))
+#head(monica_pivot)
+```
+
+Dataframe with 13 variables (including X, counter of number of samples) and 6367 samples.
+
+Column 1 labeled "3" contains a counter of the samples.
+
+12 variables to analyze: 3 are numeric - age and yronset - and the data type of the remaining 10 is characters.
+
+
+**Inspect the 10 columns with data type characters**
+
+```{r 2, echo=FALSE}
+print('outcome')
+table(monica$outcome)
+print('sex')
+table(monica$sex)
+print('premi')
+table(monica$premi)
+print('smstat')
+table(monica$smstat)
+print('diabetes')
+table(monica$diabetes)
+print('highbp')
+table(monica$highbp)
+print('hicol')
+table(monica$hichol)
+print('angina')
+table(monica$angina)
+print('stroke')
+table(monica$stroke)
+print('hosp')
+table(monica$hosp)
+
+```
+Large number of Not Known ("nk") values in 7 columns: "premi","smstat","diabetes","highbp","hichol","angina" and "stroke"
+
+3 Columns with complete info: "outcome", "sex" and "hosp"
+
+
+**Inspect the 2 columns with data type numeric**
+```{r 3, echo=FALSE}
+#sum(is.na(monica$age))
+#sum(is.na(monica$yronset))
+#sum(is.null(monica$age))
+#sum(is.null(monica$yronset))
+summary(monica$age)
+summary(monica$yronset)
+#describe(monica$age)
+```
+
+
+**Drop column 1**
+
+Drop redundant column (column # 1).
+Check operation.
+
+```{r 4, echo=FALSE}
+monica <- monica[, 2:13]
+str(monica)
+```
+```{r, echo=FALSE}
+#plot by groups of ages and sex
+ggplot(data=monica, aes(age, fill=sex)) + 
+  geom_bar(color= "#01068a", width = 0.5, position = position_dodge()) + 
+  labs(subtitle="Summary by Sex and Ages", y="Total", x="Groups of age") 
+
+#plot by groups of year of onset and sex
+ggplot(data=monica, aes(yronset, fill=sex)) + 
+  geom_bar(color= "#01068a", width = 0.5, position = position_dodge()) + 
+  labs( subtitle="Summary by Sex and Year of Onset", y="Total", x="Year of Onset") 
+```
+
+# Inspect distributions
+
+
+
+```{r 5, echo=FALSE}
+ggplot(aes(x = sex),data = monica) +
+    geom_bar(fill = c("green","blue")) +
+     scale_x_discrete(labels = c("Females", "Males")) +
+    ggtitle("Distribution of the sample by sex")
+```
+
+
+
+The data sample is skewed towards men.
+
+
+```{r 6, echo=FALSE}
+ggplot(aes(x = age),data = monica) +
+    geom_histogram(binwidth = 1,col = "black",fill = "cyan") +
+    xlim(c(35,69)) +
+    ggtitle("Distribution of the sample by age") +
+    scale_x_sqrt()
+```
+
+
+Majority of the samples in this dataset correspond to people from 55 to 75 years old.
+
+
+
+```{r 7, echo=FALSE}
+monica55to75 <- subset(monica, age >= 55)
+ggplot(aes(x = monica55to75$sex),data = monica55to75) +
+    geom_bar(fill = c("green","blue")) +
+     scale_x_discrete(labels = c("Females", "Males")) +
+    labs(title= "Distribution of the Sampleby Sex, Patients 55+", x="Sex", y="Count")
+```
+
+
+
+The data of samples from 55 to 75 yeard old is skewed towards men as well.
+
+```{r 8, echo=FALSE}
+ggplot(aes(x = outcome),data = monica) +
+    geom_bar(fill = c("black","orange")) +
+     scale_x_discrete(labels = c("Dead", "Live")) +
+    ggtitle("Distribution of the sample by outcome")
+```
+
+
+
+```{r 9, echo=FALSE}
+ggplot(aes(x = hosp),data = monica) +
+    geom_bar(fill = c("white","purple")) +
+     scale_x_discrete(labels = c("Hospotalized", "Not hospitalized")) +
+    ggtitle("Distribution of the sample by hospitalization")
+```
+
+
+
+
+```{r 10, echo=FALSE}
+ggplot(aes(x =smstat),data = monica) +
+    geom_bar(fill = c("blue","purple","green","red")) +
+     scale_x_discrete(labels = c("Ex-smoker", "No-smoker", "Current-smoker","Not Known")) +
+    ggtitle("Distribution of the sample by smoking status")
+```
+
+
+
+
+
+```{r 11, echo=FALSE}
+ggplot(aes(x =premi),data = monica) +
+    geom_bar(fill = c("blue","coral","cyan")) +
+     scale_x_discrete(labels = c("Yes","No","Not Known")) +
+    ggtitle("Distribution of the sample by previous miocardial infraction")
+```
+
+
+
+
+
+```{r 12, echo=FALSE}
+ggplot(aes(x =diabetes),data = monica) +
+    geom_bar(fill = c("darkgreen","green","darkorchid1")) +
+     scale_x_discrete(labels = c("Yes","No","Not Known")) +
+    ggtitle("Distribution of the sample by diabetes")
+```
+
+
+
+
+
+
+```{r 13, echo=FALSE}
+ggplot(aes(x =highbp),data = monica) +
+    geom_bar(fill = c("deepskyblue","darksalmon","green")) +
+     scale_x_discrete(labels = c("Yes","No","Not Known")) +
+    ggtitle("Distribution of the sample by high blood pressure")
+```
+
+
+
+
+
+```{r 14, echo=FALSE}
+ggplot(aes(x =hichol),data = monica) +
+    geom_bar(fill = c("deeppink","green","red")) +
+     scale_x_discrete(labels = c("Yes","No","Not Known")) +
+    ggtitle("Distribution of the sample by high cholestrol")
+```
+
+
+
+
+
+
+
+```{r 15, echo=FALSE}
+ggplot(aes(x =angina),data = monica) +
+    geom_bar(fill = c("purple","aquamarine","deeppink4")) +
+     scale_x_discrete(labels = c("Yes","No","Not Known")) +
+    ggtitle("Distribution of the sample by angina")
+```
+
+
+
+
+
+
+
+
+
+
+```{r 16, echo=FALSE}
+ggplot(aes(x =stroke),data = monica) +
+    geom_bar(fill = c("darkolivegreen1","green","red")) +
+     scale_x_discrete(labels = c("No","Yes","Not Known")) +
+    ggtitle("Distribution of the sample by stroke")
+```
+
+
+
+
+
+
+
+**Summary**
+
+The variables with complete information are: Sex, Age, Outcome, Hospitalization, and Year of Onset.
+
+
+# Univariate analysis
+
+**Prepare Dataset for Chi-Square**
+```{r 17, echo=FALSE}
+#Copy dataset
+monica.na <- monica
+#Convert all nk in the dataset to NA
+monica.na <- na_if(monica.na, 'nk')
+#check conversion
+str(monica.na)
+table(monica.na$premi)
+table(monica.na$smstat)
+table(monica.na$diabetes)
+table(monica.na$highbp)
+table(monica.na$hichol)
+table(monica.na$angina)
+table(monica.na$stroke)
+```
+
+
+
+
+
+
+
+
+**Chi-Square for Each Categorical Variable by Outcome**
+
+
+
+This variable was not modified, was already complete.
+p-value should be 0.9997 amd it is.
+
+
+
+
+
+**Sex and Outcome**
+
+
+```{r 18, echo=FALSE}
+#Create table
+table11 <- table(monica.na$sex, monica.na$outcome)
+# Next perform chi-square test
+chi.res11 <- chisq.test(table11)
+chi.res11
+mosaicplot(~ sex + outcome, data = monica.na,main = "SEX VS OUTCOME", shade = TRUE)
+
+
+corrplot(chi.res11$residuals, is.cor = FALSE)
+```
+
+
+
+The null hypothesis H0 is Sex and Outcome are independent.
+
+p-value is greater than 0.05. 
+
+Therefore, we fail to reject the null hypothesis.
+
+
+
+
+
+
+
+**Previous Myocardial Infarction event and Outcome**
+
+
+This variable was modified, nk replaced with NA.
+p-value of subset is 0.001374. We get the same.
+
+```{r 19, echo=FALSE}
+#Create table
+table12 <- table(monica.na$premi, monica.na$outcome)
+# Next perform chi-square test
+chi.res12 <- chisq.test(table12)
+chi.res12
+mosaicplot(~ premi + outcome, data = monica.na,main = "PREMI VS OUTCOME", shade = TRUE, expected= monica.na$premi)
+
+
+corrplot(chi.res12$residuals, is.cor = FALSE)
+```
+
+
+The null hypothesis H0 is Previous Myocardial Infarction event and Outcome are independent.
+
+p-value is smaller than 0.05.
+
+Therefore, we reject the null hypothesis H0 and conclude that Previous Myocardial Infarction event and Outcome are not significantly independent.
+
+
+
+
+**Smoking status and Outcome**
+
+
+This variable was modified, nk replaced with NA.
+p-value of subset is 0.03172. We get the same.
+
+```{r ,echo=FALSE}
+#Create table
+table13 <- table(monica.na$smstat, monica.na$outcome)
+# Next perform chi-square test
+chi.res13 <- chisq.test(table13)
+chi.res13
+mosaicplot(~ smstat + outcome, data = monica.na,main = "SMOKING STATUS VS OUTCOME", shade = TRUE, expected= monica.na$smstat)
+
+corrplot(chi.res13$residuals, is.cor = FALSE)
+```
+
+
+
+The null hypothesis H0 is Smoking status and Outcome are independent.
+
+p-value is smaller than 0.05.
+
+Therefore, we reject the null hypothesis H0 and conclude that Smoking status and Outcome are not significantly independent.
+
+
+
+
+**Diabetes and Outcome**
+
+
+This variable was modified, nk replaced with NA.
+p-value of subset is 5.472e-05. We get the same.
+
+```{r , echo=FALSE}
+#Create table
+table14 <- table(monica.na$diabetes, monica.na$outcome)
+# Next perform chi-square test
+chi.res14 <- chisq.test(table14)
+chi.res14
+mosaicplot(~ diabetes + outcome, data = monica.na,main = "DIABETES VS OUTCOME", shade = TRUE, expected= monica.na$diabetes)
+
+corrplot(chi.res14$residuals, is.cor = FALSE)
+```
+
+
+The null hypothesis H0 is Diabetes and Outcome are independent.
+
+p-value is significantly smaller than 0.05.
+
+Therefore, we reject the null hypothesis H0 and conclude that Diabetes and Outcome are not significantly independent.
+
+
+
+
+**High Blood Pressure and Outcome**
+
+
+This variable was modified, nk replaced with NA.
+p-value of subset is 0.1915. We get the same.
+
+
+```{r ,echo=FALSE}
+#Create table
+table15 <- table(monica.na$highbp, monica.na$outcome)
+# Next perform chi-square test
+chi.res15 <- chisq.test(table15)
+chi.res15
+mosaicplot(~ highbp + outcome, data = monica.na,main = "HIGH BLOOD PRESSURE VS OUTCOME", shade = TRUE, expected= monica.na$highbp)
+
+corrplot(chi.res15$residuals, is.cor = FALSE)
+```
+
+
+The null hypothesis H0 is High Blood Pressure and Outcome are independent.
+
+p-value is gretaer than 0.05.
+
+Therefore, we fail to reject the null hypothesis H0.
+
+
+
+
+**High Cholesterol and Outcome**
+
+
+This variable was modified, nk replaced with NA.
+p-value of subset is 1.182e-10. We get the same.
+
+```{r , echo=FALSE}
+#Create table
+table16 <- table(monica.na$hichol, monica.na$outcome)
+# Next perform chi-square test
+chi.res16 <- chisq.test(table16)
+chi.res16
+mosaicplot(~ hichol + outcome, data = monica.na,main = "HIGH CHOLESTROL VS OUTCOME", shade = TRUE, expected= monica.na$hichol)
+
+corrplot(chi.res16$residuals, is.cor = FALSE)
+```
+
+
+The null hypothesis H0 is High Cholesterol and Outcome are independent.
+
+p-value is significantly smaller than 0.05.
+
+Therefore, we reject the null hypothesis H0 and conclude that High Cholesterol and Outcome are not significantly independent.
+
+
+
+
+
+**Angina and Outcome**
+
+
+
+This variable was modified, nk replaced with NA.
+p-value of subset is 2.137e-07. We get the same.
+
+```{r , echo=FALSE}
+#Create table
+table17 <- table(monica.na$angina, monica.na$outcome)
+# Next perform chi-square test
+chi.res17 <- chisq.test(table17)
+chi.res17
+
+mosaicplot(~ angina + outcome, data = monica.na,main = "ANGINA VS OUTCOME", shade = TRUE, expected= monica.na$angina)
+
+corrplot(chi.res17$residuals, is.cor = FALSE)
+```
+
+
+
+The null hypothesis H0 is Angina and Outcome are independent.
+
+p-value is significantly smaller than 0.05.
+
+Therefore, we reject the null hypothesis H0 and conclude that Angina and Outcome are not significantly independent.
+
+
+
+
+
+
+**Stroke and Outcome**
+
+
+This variable was modified, nk replaced with NA.
+p-value of subset is 3.897e-13. We get the same.
+
+```{r , echo=FALSE}
+#Create table
+table18 <- table(monica.na$stroke, monica.na$outcome)
+# Next perform chi-square test
+chi.res18 <- chisq.test(table18)
+chi.res18
+
+mosaicplot(~ stroke + outcome, data = monica.na,main = "STROKE VS OUTCOME", shade = TRUE, expected= monica.na$stroke)
+
+corrplot(chi.res18$residuals, is.cor = FALSE)
+```
+
+
+
+The null hypothesis H0 is Stroke and Outcome are independent.
+
+p-value is significantly smaller than 0.05.
+
+Therefore, we reject the null hypothesis H0 and conclude that Stroke and Outcome are not significantly independent.
+
+
+
+
+
+
+**Hospitalization and Outcome**
+
+
+
+This variable was not modified, was already complete.
+p-value should be < 2.2e-16 amd it is.
+
+```{r , echo=FALSE}
+#Create table, no need to subset
+table19 <- table(monica.na$hosp, monica.na$outcome)
+# Next perform chi-square test
+chi.res19 <- chisq.test(table19)
+chi.res19
+
+mosaicplot(~ hosp + outcome, data = monica.na,main = "HOSPITAL VS OUTCOME", shade = TRUE, expected= monica.na$hosp)
+
+corrplot(chi.res19$residuals, is.cor = FALSE)
+```
+
+
+
+The null hypothesis H0 is Hospitalization and Outcome are independent.
+
+p-value is significanly smaller than 0.05.
+
+Therefore, we reject the null hypothesis H0 and conclude that Hospitalization and Outcome are not significantly independent.
+
+
+
+
+# Summary of univariate analysis
+
+Variables for which we reject the null hypothesis Ho and conclude that they are not significantly independent:
+Previous Myocardial Infarction, Smoking Status, Diabetes, High Cholesterol, Angina, Stroke and Hospitalization.
+
+Among these variables, p-value is significantly smaller for: Diabetes, High Cholesterol, Angina, Stroke and Hospitalization.
+
+Variables for which we fail to reject the null hypothesis:
+Sex and High Blood Pressure.
+
+
+**Summary of Risk Factors**
+
+| Risk factors    | Reject/Fail to reject | p-value |
+|-----------------|-----------------------|---------|
+|- myocardial inf.|Reject                |`r chi.res12$p.value`|
+| - smoking status |Reject               |`r round(chi.res13$p.value, digits=5)`|
+| - diabetes       |Reject               |`r round(chi.res14$p.value, digits=5)` |
+|- high blood pressure |Fail to reject   |`r chi.res15$p.value`  |
+| - high colesterol|Reject               |`r chi.res16$p.value`  |
+| - angina         |Reject               |`r chi.res17$p.value` |
+| - stroke         |Reject               |`r chi.res18$p.value`  |
+| - hospitalization|Reject               |`r chi.res19$p.value`  |
+
+
+# Univariate analysis stratified by Sex
+
+
+```{r 20, echo=FALSE}
+#Subset by sex
+monica.f <- subset(monica.na, sex == 'f')
+monica.m <- subset(monica.na, sex == 'm')
+str(monica.f)
+str(monica.m)
+```
+
+
+**Sex and Outcome by Sex**
+
+
+Female
+
+```{r 22.1, echo=FALSE}
+#Create table
+table22.1 <- table(monica.f$sex, monica.f$outcome)
+# Next perform chi-square test
+chi.res22.1 <- chisq.test(table22.1)
+chi.res22.1
+
+#corrplot(chi.res22.1$residuals, is.cor = FALSE)
+```
+
+
+Male
+
+
+```{r 22.2, echo=FALSE}
+#Create table
+table22.2 <- table(monica.m$sex, monica.m$outcome)
+# Next perform chi-square test
+chi.res22.2 <- chisq.test(table22.2)
+chi.res22.2
+
+
+#corrplot(chi.res22.2$residuals, is.cor = FALSE)
+```
+
+
+
+Same conclusion for female and male.
+
+
+
+
+**Previous Myocardial Infarction and Outcome by Sex**
+
+
+Female
+
+
+
+```{r 23.1, echo=FALSE}
+#Create table
+table23.1 <- table(monica.f$premi, monica.f$outcome)
+# Next perform chi-square test
+chi.res23.1 <- chisq.test(table23.1)
+chi.res23.1
+
+corrplot(chi.res23.1$residuals, is.cor = FALSE)
+```
+
+
+Male
+
+
+
+```{r 23.2, echo=FALSE}
+#Create table
+table23.2 <- table(monica.m$premi, monica.m$outcome)
+# Next perform chi-square test
+chi.res23.2 <- chisq.test(table23.2)
+chi.res23.2
+
+corrplot(chi.res23.2$residuals, is.cor = FALSE)
+```
+
+
+
+Different conclusion for female and male!
+
+
+
+
+**Smoking Status and Outcome by Sex**
+
+
+Female
+
+
+
+```{r 24.1, echo=FALSE}
+#Create table
+table24.1 <- table(monica.f$smstat, monica.f$outcome)
+# Next perform chi-square test
+chi.res24.1 <- chisq.test(table24.1)
+chi.res24.1
+
+corrplot(chi.res24.1$residuals, is.cor = FALSE)
+```
+
+
+
+Male
+
+
+
+```{r 24.2, echo=FALSE}
+#Create table
+table24.2 <- table(monica.m$smstat, monica.m$outcome)
+# Next perform chi-square test
+chi.res24.2 <- chisq.test(table24.2)
+chi.res24.2
+
+corrplot(chi.res24.2$residuals, is.cor = FALSE)
+```
+
+
+
+Different conclusion for female and male!
+
+
+
+**Diabetes and Outcome by Sex**
+
+
+Female
+
+
+```{r 25.1, echo=FALSE}
+#Create table
+table25.1 <- table(monica.f$diabetes, monica.f$outcome)
+# Next perform chi-square test
+chi.res25.1 <- chisq.test(table25.1)
+chi.res25.1
+
+corrplot(chi.res25.1$residuals, is.cor = FALSE)
+```
+
+
+Male
+
+
+```{r 25.2, echo=FALSE}
+#Create table
+table25.2 <- table(monica.m$diabetes, monica.m$outcome)
+# Next perform chi-square test
+chi.res25.2 <- chisq.test(table25.2)
+chi.res25.2
+
+corrplot(chi.res25.2$residuals, is.cor = FALSE)
+```
+
+
+
+Same conclusion for female and male.
+
+
+
+**High Blood Pressure and Outcome by Sex**
+
+
+Female
+
+
+```{r 26.1, echo=FALSE}
+#Create table
+table26.1 <- table(monica.f$highbp, monica.f$outcome)
+# Next perform chi-square test
+chi.res26.1 <- chisq.test(table26.1)
+chi.res26.1
+
+corrplot(chi.res26.1$residuals, is.cor = FALSE)
+```
+
+
+
+Male
+
+
+```{r 26.2, echo=FALSE}
+#Create table
+table26.2 <- table(monica.m$highbp, monica.m$outcome)
+# Next perform chi-square test
+chi.res26.2 <- chisq.test(table26.2)
+chi.res26.2
+
+corrplot(chi.res26.2$residuals, is.cor = FALSE)
+```
+
+
+Same conclusion for female and male.
+
+
+
+
+**High Cholesterol and Outcome by Sex**
+
+
+Female
+
+
+```{r 27.1, echo=FALSE}
+#Create table
+table27.1 <- table(monica.f$hichol, monica.f$outcome)
+# Next perform chi-square test
+chi.res27.1 <- chisq.test(table27.1)
+chi.res27.1
+
+corrplot(chi.res27.1$residuals, is.cor = FALSE)
+```
+
+
+Male
+
+
+
+```{r 27.2, echo=FALSE}
+#Create table
+table27.2 <- table(monica.m$hichol, monica.m$outcome)
+# Next perform chi-square test
+chi.res27.2 <- chisq.test(table27.2)
+chi.res27.2
+
+corrplot(chi.res27.2$residuals, is.cor = FALSE)
+```
+
+
+Same conclusion for female and male.
+
+
+**Angina and Outcome by Sex**
+
+
+Female
+
+
+```{r 28.1, echo=FALSE}
+#Create table
+table28.1 <- table(monica.f$angina, monica.f$outcome)
+# Next perform chi-square test
+chi.res28.1 <- chisq.test(table28.1)
+chi.res28.1
+
+corrplot(chi.res28.1$residuals, is.cor = FALSE)
+```
+
+
+Male
+
+
+
+```{r 28.2, echo=FALSE}
+#Create table
+table28.2 <- table(monica.m$angina, monica.m$outcome)
+# Next perform chi-square test
+chi.res28.2 <- chisq.test(table28.2)
+chi.res28.2
+
+corrplot(chi.res28.2$residuals, is.cor = FALSE)
+```
+
+
+
+Different conclusion for female and male!
+
+
+
+**Stroke and Outcome by Sex**
+
+
+
+Female
+
+
+
+```{r 29.1, echo=FALSE}
+#Create table
+table29.1 <- table(monica.f$stroke, monica.f$outcome)
+# Next perform chi-square test
+chi.res29.1 <- chisq.test(table29.1)
+chi.res29.1
+
+corrplot(chi.res29.1$residuals, is.cor = FALSE)
+```
+
+
+Male
+
+
+```{r 29.2, echo=FALSE}
+#Create table
+table29.2 <- table(monica.m$stroke, monica.m$outcome)
+# Next perform chi-square test
+chi.res29.2 <- chisq.test(table29.2)
+chi.res29.2
+
+corrplot(chi.res29.2$residuals, is.cor = FALSE)
+```
+
+
+same conclusion for female and male.
+
+
+
+**Hospitalization and Outcome by Sex**
+
+
+
+Female
+
+
+
+
+```{r 30.1, echo=FALSE}
+#Create table
+table30.1 <- table(monica.f$hosp, monica.f$outcome)
+# Next perform chi-square test
+chi.res30.1 <- chisq.test(table30.1)
+chi.res30.1
+
+
+corrplot(chi.res30.1$residuals, is.cor = FALSE)
+```
+
+
+Male
+
+
+
+```{r 30.2, echo=FALSE}
+#Create table
+table30.2 <- table(monica.m$hosp, monica.m$outcome)
+# Next perform chi-square test
+chi.res30.2 <- chisq.test(table30.2)
+chi.res30.2
+
+corrplot(chi.res30.2$residuals, is.cor = FALSE)
+```
+
+
+Same conclusion for female and male.
+
+
+**Summary Female vs Risk factors**
+
+| Risk factor | Reject/Fail to reject | p-value     |
+|-----------------|-------------------| ------------|
+|- myocardial inf. |Reject            |`r round(chi.res23.1$p.value, digits=4)` |
+| - smoking status |Reject            |`r chi.res24.1$p.value`|
+| - diabetes       |Fail to reject    |`r chi.res25.1$p.value`|
+|- high blood pressure |Reject        |`r chi.res26.1$p.value`|
+| - high colesterol|Reject            |`r chi.res27.1$p.value`|
+| - angina         |Reject            |`r chi.res28.1$p.value`|
+|- stroke          |Reject            |`r chi.res29.1$p.value`|
+|- sex             |Reject            |`r chi.res22.1$p.value`|
+|- hospitalization |Reject            |`r chi.res30.1$p.value`|
+
+
+**Summary Male vs Risk factors**
+
+| Risk factor | Reject/Fail to reject | p-value     |
+|-----------------|-------------------| ------------|
+|- myocardial inf. |Fail to Reject    |`r chi.res23.2$p.value` |
+| - smoking status |Fail to Reject    |`r chi.res24.2$p.value`|
+| - diabetes       |Reject            |`r chi.res25.2$p.value`|
+|- high blood pressure |Fail to Reject|`r chi.res26.2$p.value`|
+| - high colesterol|Reject            |`r chi.res27.2$p.value` |
+| - angina         |Fail to Reject    |`r chi.res28.2$p.value`|
+|- stroke          |Reject            |`r chi.res29.2$p.value`|
+|- sex             |Reject            |`r chi.res22.2$p.value`|
+|- hosppitalization|Reject            |`r chi.res30.2$p.value`|
+
+**Study of Missingness of each Feature by Sex**
+
+```{r 31.1, echo=FALSE}
+#Subset dataset by sex
+monica.fnk <- subset(monica, monica$sex == 'f')
+monica.mnk <- subset(monica, monica$sex == 'm')
+#premi
+print('premi / female')
+table(monica.fnk$premi)
+print('premi / male')
+table(monica.mnk$premi)
+#smstat
+print('smstat / female')
+table(monica.fnk$smstat)
+print('smstat / male')
+table(monica.mnk$smstat)
+#diabetes
+print('diabetes / female')
+table(monica.fnk$diabetes)
+print('diabetes / male')
+table(monica.mnk$diabetes)
+#highbp
+print('highbp / female')
+table(monica.fnk$highbp)
+print('highbp / male')
+table(monica.mnk$highbp)
+#hichol
+print('hichol / female')
+table(monica.fnk$hichol)
+print('hichol / male')
+table(monica.mnk$hichol)
+#angina
+print('angina / female')
+table(monica.fnk$angina)
+print('angina / male')
+table(monica.mnk$angina)
+#stroke
+print('stroke / female')
+table(monica.fnk$stroke)
+print('stroke / male')
+table(monica.mnk$stroke)
+```
+
+# Univariate analysis of numerical variables Age and Year of Onset
+
+**Prepare Dataframe**
+
+```{r 32.1, echo=FALSE}
+#copy dataframe
+monica.na.bin <- monica.na
+#inspect age
+summary(monica.na.bin$age)
+#bin age in new column
+monica.na.bin$agecat <- cut(monica.na.bin$age, c(34.5, 39.5, 44.5, 49.5, 54.5, 59.5, 64.5, 69.5))
+summary(monica.na.bin$agecat)
+str(monica.na.bin)
+```
+
+```{r 32.2, echo=FALSE}
+#inspect yronset
+summary(monica.na.bin$yronset)
+#bin yronset in new column
+monica.na.bin$yronsetcat <- cut(monica.na.bin$yronset, c(8.45, 89.5, 94.5))
+summary(monica.na.bin$yronsetcat)
+str(monica.na.bin)
+```
+```{r 32.3, echo=FALSE}
+
+#Subset by sex
+monica.na.bin.f <- subset(monica.na.bin, sex == 'f')
+monica.na.bin.m <- subset(monica.na.bin, sex == 'm')
+str(monica.na.bin.f)
+str(monica.na.bin.m)
+```
+
+**Analysis of Age / Outcome and Age / Outcome Stratified by Sex**
+
+
+**Age / Outcome**
+```{r 33, echo=FALSE}
+#Create table
+table33 <- table(monica.na.bin$agecat, monica.na.bin$outcome)
+# Next perform chi-square test
+chi.res33 <- chisq.test(table33)
+chi.res33
+```
+The null hypothesis H0 is Age and Outcome are independent.
+
+p-value is significanly smaller than 0.05.
+
+Therefore, we reject the null hypothesis H0 and conclude that Age and Outcome are not significantly independent.
+
+**Age / Outcome Stratified by Sex**
+
+
+**Female**
+```{r 34, echo=FALSE}
+#Create table
+table34 <- table(monica.na.bin.f$agecat, monica.na.bin.f$outcome)
+# Next perform chi-square test
+chi.res34 <- chisq.test(table34)
+chi.res34
+```
+The null hypothesis H0 is Age and Outcome are independent.
+
+p-value is significanly smaller than 0.05.
+
+Therefore, we reject the null hypothesis H0 and conclude that Age and Outcome are not significantly independent.
+
+
+**Male**
+```{r 35, echo=FALSE}
+#Create table
+table35 <- table(monica.na.bin.m$agecat, monica.na.bin.m$outcome)
+# Next perform chi-square test
+chi.res35 <- chisq.test(table35)
+chi.res35
+```
+The null hypothesis H0 is Age and Outcome are independent.
+
+p-value is smaller than 0.05.
+
+Therefore, we reject the null hypothesis H0 and conclude that Age and Outcome are not significantly independent.
+
+
+## Analysis of Year of Onset / outcome and Year of Onset / Outcome stratified by Sex
+
+
+**Year of Onset / Outcome**
+
+```{r 36, echo=FALSE}
+#Create table
+table36 <- table(monica.na.bin$yronsetcat, monica.na.bin$outcome)
+# Next perform chi-square test
+chi.res36 <- chisq.test(table36)
+chi.res36
+```
+
+The null hypothesis H0 is Year of Onset and Outcome are independent.
+
+p-value is significanly smaller than 0.05.
+
+Therefore, we reject the null hypothesis H0 and conclude that Year of Onset and Outcome are not significantly independent.
+
+
+**Fenale**
+```{r 37, echo=FALSE}
+#Create table
+table37 <- table(monica.na.bin.f$yronsetcat, monica.na.bin.f$outcome)
+# Next perform chi-square test
+chi.res37 <- chisq.test(table37)
+chi.res37
+```
+The null hypothesis H0 is Year of Onset and Outcome are independent.
+
+p-value is slightly smaller than 0.05.
+
+Therefore, we reject the null hypothesis H0 and conclude that Year of Onset and Outcome are not significantly independent.
+
+
+**Male**
+```{r 38, echo=FALSE}
+#Create table
+table38 <- table(monica.na.bin.m$yronsetcat, monica.na.bin.m$outcome)
+# Next perform chi-square test
+chi.res38 <- chisq.test(table38)
+chi.res38
+```
+The null hypothesis H0 is yronset and outcome are independent.
+
+p-value is smaller than 0.05.
+
+Therefore, we reject the null hypothesis H0 and conclude that yronset and outcome are not significantly independent.
+
+# Univariate losgistic regression analysis (performed only on values with stastical significance):
+
+**Results for Outcome vs Diabetes**
+```{r 39, echo=FALSE}
+#copy dataset
+monica.co <- monica.na
+#create new column and convert outcome to 0 and 1
+monica.co$coutcome <- monica$outcome
+monica.co$outcome <-  revalue(monica.co$outcome, c("live"=0, "dead"=1))
+monica.co$outcome <- as.factor(monica.co$outcome)
+#inspect outcome
+summary(monica.co$outcome)
+# Next perform logistic regression
+val1<-glm(outcome ~ diabetes, data = monica.co, family = "binomial")
+summary(val1)$coefficients
+```
+Since the value of the coefficient is a negative value we can say that having Diabetes does not affect the Outcome.
+
+**Results for Outcome vs Stroke**
+```{r 40, echo=FALSE}
+#copy dataset
+monica.co <- monica.na
+#create new column and convert outcome to 0 and 1
+monica.co$coutcome <- monica$outcome
+monica.co$outcome <-  revalue(monica.co$outcome, c("live"=0, "dead"=1))
+monica.co$outcome <- as.factor(monica.co$outcome)
+#inspect outcome
+summary(monica.co$outcome)
+# Next perform logistic regression
+val2<-glm(outcome ~ stroke, data = monica.co, family = "binomial")
+summary(val2)$coefficients
+```
+Since the value of the coefficient is a negative value we can say that history of a Stroke does not affect the Outcome.
+
+**Results for Outcome vs Angina**
+```{r 41, echo=FALSE}
+#copy dataset
+monica.co <- monica.na
+#create new column and convert outcome to 0 and 1
+monica.co$coutcome <- monica$outcome
+monica.co$outcome <-  revalue(monica.co$outcome, c("live"=0, "dead"=1))
+monica.co$outcome <- as.factor(monica.co$outcome)
+#inspect outcome
+summary(monica.co$outcome)
+# Next perform logistic regression
+val3<-glm(outcome ~ angina, data = monica.co, family = "binomial")
+summary(val3)$coefficients
+```
+Since the value of the coefficient is a negative value we can say that having Angina does not affect the Outcome.
+
+**Results for Outcome vs High Cholesterol**
+```{r 42, echo=FALSE}
+#copy dataset
+monica.co <- monica.na
+#create new column and convert outcome to 0 and 1
+monica.co$coutcome <- monica$outcome
+monica.co$outcome <-  revalue(monica.co$outcome, c("live"=0, "dead"=1))
+monica.co$outcome <- as.factor(monica.co$outcome)
+#inspect outcome
+summary(monica.co$outcome)
+# Next perform logistic regression
+val4<-glm(outcome ~ hichol, data = monica.co, family = "binomial")
+summary(val4)$coefficients
+```
+Since the value of the coefficient is a positive value we can say that having High Cholestrol does affect the Outcome.
+
+
+
+**Results for Outcome vs Hospitalization**
+```{r 44, echo=FALSE}
+#copy dataset
+monica.co <- monica.na
+#create new column and convert outcome to 0 and 1
+monica.co$coutcome <- monica$outcome
+monica.co$outcome <-  revalue(monica.co$outcome, c("live"=0, "dead"=1))
+monica.co$outcome <- as.factor(monica.co$outcome)
+#inspect outcome
+summary(monica.co$outcome)
+# Next perform logistic regression
+val5<-glm(outcome ~ hosp, data = monica.co, family = "binomial")
+summary(val5)$coefficients
+```
+Since the value of the coefficient is a positive value we can say that being Hospitalized does affect the Outcome.
+
+**Results for Outcome vs Previous Myocardial Infraction event**
+```{r 45, echo=FALSE}
+#copy dataset
+monica.co <- monica.na
+#create new column and convert outcome to 0 and 1
+monica.co$coutcome <- monica$outcome
+monica.co$outcome <-  revalue(monica.co$outcome, c("live"=0, "dead"=1))
+monica.co$outcome <- as.factor(monica.co$outcome)
+#inspect outcome
+summary(monica.co$outcome)
+# Next perform logistic regression
+val6<-glm(outcome ~ premi, data = monica.co, family = "binomial")
+summary(val6)$coefficients
+```
+
+Since the value of the coefficient is a negative value we can say that having a Previous Myocardial Infraction event does not affect the outcome.

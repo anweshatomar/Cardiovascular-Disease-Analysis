@@ -1,0 +1,1474 @@
+---
+title: "DATA PROS - Project 2"
+author: "DATA PROS"
+date: "NOV-2019"
+output: html_document
+---
+
+```{r setup, include=F}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::knit_meta(class=NULL, clean = TRUE)
+# include=T, eval=T, echo=T, results='hide'/'asis',..., collapse=F, warning=T, message=T, error=T, cache=T, fig.width=6, fig.height=4, fig.dim=c(6,4) #inches, fig.align='left'/'center','right', 
+options(scientific=T, digits = 3) 
+# options(scipen=9, digits = 3) 
+# ‘scipen’: integer. A penalty to be applied when deciding to print numeric values in fixed or exponential notation.  Positive values bias towards fixed and negative towards scientific notation: fixed notation will be preferred unless it is more than ‘scipen’ digits wider.
+# use scipen=999 to prevent scientific notation at all times
+```
+
+```{r basicfcn, include=F}
+# can add quietly=T option to the require() function
+loadPkg = function(x) { if (!require(x,character.only=T, quietly =T)) { install.packages(x,dep=T,repos="http://cran.us.r-project.org"); if(!require(x,character.only=T)) stop("Package not found") } }
+loadPkg("pscl") #to use McFadden
+loadPkg("pROC") #to use ROC and AUC model evaluation
+library(broom)
+```
+
+```{r processing, include=F}
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+require(tree)
+library(rpart)
+library(randomForest)
+#library needed for decision trees
+library(ISLR)
+library(FNN) 
+library(class)
+#data(package="ISLR")
+```
+
+# Brief EDA on the dataset:
+
+
+# Inspect dataset: Data Dictionary
+```{r 1, echo=FALSE}
+monica1 <- data.frame(read.csv("monica.csv", header = TRUE, stringsAsFactors = F))
+names(monica1)
+#head(monica, 10)
+#tail(monica, 10)
+str(monica1)
+library(reshape2)
+monica_pivot <- melt(monica1, id.vars = c("outcome", "sex","age","yronset"))
+#head(monica_pivot)
+```
+
+Dataframe with 13 variables (including X, counter of number of samples) and 6367 samples.
+
+Column 1 labeled "3" contains a counter of the samples.
+
+12 variables to analyze: 3 are numeric - age and yronset - and the data type of the remaining 10 is characters.
+
+
+**Inspect the 10 columns with data type characters**
+
+```{r 2, echo=FALSE}
+print('outcome')
+table(monica1$outcome)
+print('sex')
+table(monica1$sex)
+print('premi')
+table(monica1$premi)
+print('smstat')
+table(monica1$smstat)
+print('diabetes')
+table(monica1$diabetes)
+print('highbp')
+table(monica1$highbp)
+print('hicol')
+table(monica1$hichol)
+print('angina')
+table(monica1$angina)
+print('stroke')
+table(monica1$stroke)
+print('hosp')
+table(monica1$hosp)
+
+```
+Large number of Not Known ("nk") values in 7 columns: "premi","smstat","diabetes","highbp","hichol","angina" and "stroke"
+
+3 Columns with complete info: "outcome", "sex" and "hosp"
+
+
+**Inspect the 2 columns with data type numeric**
+```{r 3, echo=FALSE}
+#sum(is.na(monica$age))
+#sum(is.na(monica$yronset))
+#sum(is.null(monica$age))
+#sum(is.null(monica$yronset))
+summary(monica1$age)
+summary(monica1$yronset)
+#describe(monica$age)
+```
+
+The variables with complete information are: Sex, Age, Outcome, Hospitalization, and Year of Onset.
+
+
+## Following findings of univariate analysis, use Logistic Regression to:
+
+1- Determine if any of the predictors confound the association between the other predictors and the outcome, stratified by sex.
+
+2- Determine the variables that best predict the odds of mortality among our sample population, stratified by sex
+
+Approach is forward selection: add variables one-at-a-time until we
+cannot find any variables that improve the model.
+
+The fit of the model is evaluated as measured by McFadden: the result is a pseudo R2 to undertand the percentage of variation explained by the model.
+
+```{r, include=F}
+monica <- data.frame(read.csv("monica.csv", header = TRUE))
+#Copy dataset
+monica.na <- monica
+#Convert all nk in the dataset to NA
+monica.na <- na_if(monica.na, 'nk')
+str(monica.na)
+```
+```{r, include=F}
+#copy dataset
+monica.co <- monica.na
+str(monica.co)
+```
+
+```{r, include=F}
+#create new column and convert outcome to 0 and 1
+monica.co$coutcome <- monica$outcome
+monica.co$outcome <-  revalue(monica.co$outcome, c("live"=1, "dead"=0))
+monica.co$outcome <- as.factor(monica.co$outcome)
+#inspect outcome
+summary(monica.co$outcome)
+#copy back to monica.na
+monica.na <- monica.co
+summary(monica.na$outcome)
+```
+
+```{r , echo=FALSE, include=F}
+#Prepare dataframe by creating bins for numerical data
+#copy dataframe
+monica.na.bin <- monica.na
+#inspect age
+summary(monica.na.bin$age)
+#bin age in new column
+monica.na.bin$agecat <- cut(monica.na.bin$age, c(34.5, 39.5, 44.5, 49.5, 54.5, 59.5, 64.5, 69.5))
+summary(monica.na.bin$agecat)
+str(monica.na.bin)
+```
+
+```{r , echo=FALSE, include=F}
+#inspect yronset
+summary(monica.na.bin$yronset)
+#bin yronset in new column
+monica.na.bin$yronsetcat <- cut(monica.na.bin$yronset, c(8.45, 89.5, 94.5))
+summary(monica.na.bin$yronsetcat)
+str(monica.na.bin)
+```
+
+
+```{r, include=F}
+#Subset by sex
+monica.na.bin.f <- subset(monica.na.bin, sex == 'f')
+monica.na.bin.m <- subset(monica.na.bin, sex == 'm')
+summary(monica.na.bin.f$outcome)
+summary(monica.na.bin.m$outcome)
+summary(monica.na.bin.f)
+```
+
+## FEMALES
+
+```{r, include=F}
+# FEMALE ALL VARIABLES
+# Next perform logistic regression
+glmf0 <-glm(outcome ~ diabetes+stroke+angina+hichol+hosp+premi+agecat+yronsetcat, data = monica.na.bin.f, family = "binomial")
+summary(glmf0)
+#run McFadden
+glmf0pr2 = pR2(glmf0)
+glmf0pr2
+```
+McFadden of full model is `r glmf0pr2['McFadden']`
+
+
+```{r, include=F}
+#perform logistic regression variable hosp
+glmf1<-glm(outcome ~ hosp, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variable age
+glmf2<-glm(outcome ~ age, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variable hichol
+glmf3<-glm(outcome ~ hichol, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variable yronset
+glmf4<-glm(outcome ~ yronset, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variable stroke
+glmf5<-glm(outcome ~ stroke, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variable angina
+glmf6<-glm(outcome ~ angina, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variable premi
+glmf7<-glm(outcome ~ premi, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variable diabetes
+glmf8<-glm(outcome ~ diabetes, data = monica.na.bin.f, family = "binomial")
+#run McFadden
+glmf1pr2 = pR2(glmf1)
+glmf1pr2
+glmf2pr2 = pR2(glmf2)
+glmf2pr2
+glmf3pr2 = pR2(glmf3)
+glmf3pr2
+glmf4pr2 = pR2(glmf4)
+glmf4pr2
+glmf5pr2 = pR2(glmf5)
+glmf5pr2
+glmf6pr2 = pR2(glmf6)
+glmf6pr2
+glmf7pr2 = pR2(glmf7)
+glmf7pr2
+glmf8pr2 = pR2(glmf8)
+glmf8pr2
+```
+
+Univariate results:
+
+|Variable|McFadden|
+|---|---|
+|Hospitalization|`r glmf1pr2['McFadden']`|
+|Age|`r glmf2pr2['McFadden']`|
+|High cholesterol|`r glmf3pr2['McFadden']`|
+|Year onset|`r glmf4pr2['McFadden']`|
+|Stroke|`r glmf5pr2['McFadden']`|
+|Angina|`r glmf6pr2['McFadden']`|
+|Previous myocardial infarction|`r glmf7pr2['McFadden']`|
+|Diabetes|`r glmf8pr2['McFadden']`|
+
+
+
+```{r, include=F}
+#perform logistic regression variables hosp + age
+glmf9<-glm(outcome ~ hosp+age, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + hichol
+glmf10<-glm(outcome ~ hosp+hichol, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + yronset
+glmf11<-glm(outcome ~ hosp+yronset, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + stroke
+glmf12<-glm(outcome ~ hosp+stroke, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + agina
+glmf13<-glm(outcome ~ hosp+angina, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + premi
+glmf14<-glm(outcome ~ hosp+premi, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + diabetes
+glmf15<-glm(outcome ~ hosp+diabetes, data = monica.na.bin.f, family = "binomial")
+#run McFadden
+glmf9pr2 = pR2(glmf9)
+glmf9pr2
+glmf10pr2 = pR2(glmf10)
+glmf10pr2
+glmf11pr2 = pR2(glmf11)
+glmf11pr2
+glmf12pr2 = pR2(glmf12)
+glmf12pr2
+glmf13pr2 = pR2(glmf13)
+glmf13pr2
+glmf14pr2 = pR2(glmf14)
+glmf14pr2
+glmf15pr2 = pR2(glmf15)
+glmf15pr2
+```
+
+McFadden of full model is `r glmf0pr2['McFadden']`
+
+Highest McFadden (`r glmf10pr2['McFadden']`) corresponds to hosp+hichol.
+
+I add hichol to the model since it improves it from roughly 40% to 54%
+
+```{r, include=F}
+#perform logistic regression variables hosp + hichol + age
+glmf16<-glm(outcome ~ hosp+hichol+age, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + hichol + yronset
+glmf17<-glm(outcome ~ hosp+hichol+yronset, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + hichol + stroke
+glmf18<-glm(outcome ~ hosp+hichol+stroke, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + + hichol + agina
+glmf19<-glm(outcome ~ hosp+hichol+angina, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + + hichol + premi
+glmf20<-glm(outcome ~ hosp+hichol+premi, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + + hichol + diabetes
+glmf21<-glm(outcome ~ hosp+hichol+diabetes, data = monica.na.bin.f, family = "binomial")
+#run McFadden
+glmf16pr2 = pR2(glmf16)
+glmf16pr2
+glmf17pr2 = pR2(glmf17)
+glmf17pr2
+glmf18pr2 = pR2(glmf18)
+glmf18pr2
+glmf19pr2 = pR2(glmf19)
+glmf19pr2
+glmf20pr2 = pR2(glmf20)
+glmf20pr2
+glmf21pr2 = pR2(glmf21)
+glmf21pr2
+```
+
+McFadden of full model is 0.585
+
+Highest McFadden (`r glmf17pr2['McFadden']`) corresponds to hosp+hichol+yronset
+
+I add yronset to the model since it improves the model: from roughly 54% to 56.2%
+
+```{r, include=F}
+#perform logistic regression variables hosp + hichol + yronset + age
+glmf22<-glm(outcome ~ hosp+hichol+yronset+age, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + hichol + yronset + stroke
+glmf23<-glm(outcome ~ hosp+hichol+yronset+stroke, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + hichol + yronset + angina
+glmf24<-glm(outcome ~ hosp+hichol+yronset+angina, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + hichol + yronset + premi
+glmf25<-glm(outcome ~ hosp+hichol+yronset+premi, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + hichol + yronset + diabetes
+glmf26<-glm(outcome ~ hosp+hichol+yronset+diabetes, data = monica.na.bin.f, family = "binomial")
+#run McFadden
+glmf22pr2 = pR2(glmf22)
+glmf22pr2
+glmf23pr2 = pR2(glmf23)
+glmf23pr2
+glmf24pr2 = pR2(glmf24)
+glmf24pr2
+glmf25pr2 = pR2(glmf25)
+glmf25pr2
+glmf26pr2 = pR2(glmf26)
+glmf26pr2
+```
+
+McFadden of full model is 0.585
+
+Highest McFadden (`r glmf24pr2['McFadden']`) corresponds to hosp+hichol+yronset+angina
+
+I add angina to the model since it improves the model: from roughly 56.2% to 56.4%
+
+```{r, include=F}
+#perform logistic regression variables hosp + hichol + yronset + angina + age
+glmf27<-glm(outcome ~ hosp+hichol+yronset+angina+age, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + hichol + yronset + angina + stroke
+glmf28<-glm(outcome ~ hosp+hichol+yronset+angina+stroke, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + hichol + yronset + angina + premi
+glmf29<-glm(outcome ~ hosp+hichol+yronset+angina+premi, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + hichol + yronset + angina + diabetes
+glmf30<-glm(outcome ~ hosp+hichol+yronset+angina+diabetes, data = monica.na.bin.f, family = "binomial")
+#run McFadden
+glmf27pr2 = pR2(glmf27)
+glmf27pr2
+glmf28pr2 = pR2(glmf28)
+glmf28pr2
+glmf29pr2 = pR2(glmf29)
+glmf29pr2
+glmf30pr2 = pR2(glmf30)
+glmf30pr2
+```
+
+McFadden of full model is 0.585
+
+Highest McFadden (`r glmf28pr2['McFadden']`) corresponds to hosp+hichol+yronset+angina+stroke
+
+I add stroke to the model since it improves the model: from roughly 56.4% to 57.2%
+
+```{r, include=F}
+#perform logistic regression variables hosp + hichol + yronset + angina + stroke + age
+glmf31<-glm(outcome ~ hosp+hichol+yronset+angina+stroke+age, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + hichol + yronset + angina + stroke + premi
+glmf32<-glm(outcome ~ hosp+hichol+yronset+angina+stroke+premi, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + hichol + yronset + angina + stroke + diabetes
+glmf33<-glm(outcome ~ hosp+hichol+yronset+angina+stroke+diabetes, data = monica.na.bin.f, family = "binomial")
+#run McFadden
+glmf31pr2 = pR2(glmf31)
+glmf31pr2
+glmf32pr2 = pR2(glmf32)
+glmf32pr2
+glmf33pr2 = pR2(glmf33)
+glmf33pr2
+```
+
+McFadden of full model is 0.585
+
+Highest McFadden(0.578) corresponds to hosp+hichol+yronset+angina+stroke+age and hosp+hichol+yronset+angina+stroke+premi
+
+
+```{r, echo=F, include=F}
+AIC(glmf31, glmf32)
+```
+
+AIC is pratically the same. Thus, I choose to add the variable with the smallest p-value: age.
+
+I add age to the model since it improves it from roughly 57.2% to 57.8%
+
+```{r, include=T}
+#perform logistic regression variables hosp + hichol + yronset + angina + stroke + age + premi
+glmf34<-glm(outcome ~ hosp+hichol+yronset+angina+stroke+age+premi, data = monica.na.bin.f, family = "binomial")
+#perform logistic regression variables hosp + hichol + yronset + angina + stroke + age + diabetes
+glmf35<-glm(outcome ~ hosp+hichol+yronset+angina+stroke+age+diabetes, data = monica.na.bin.f, family = "binomial")
+
+#run McFadden
+glmf34pr2 = pR2(glmf34)
+glmf34pr2
+glmf35pr2 = pR2(glmf35)
+glmf35pr2
+```
+
+McFadden of full model is 0.585
+
+Highest McFadden(0.583) corresponds to hosp+hichol+yronset+angina+stroke+age+premi
+
+I add premi to the model since it improves it from roughly 57.8% to 58.3%
+
+Last variable to add is diabetes since full model has the highest McFadden.
+
+Therefore, final model for females includes all variables, in the following order: hospitalization, high cholesterol, angina, stroke, previous myocardial infarction and diabetes.
+
+
+
+## MALES
+
+
+```{r, include=F}
+# MALE ALL VARIABLES
+# Next perform logistic regression
+glmm0 <-glm(outcome ~ diabetes+stroke+angina+hichol+hosp+premi+agecat+yronsetcat, data = monica.na.bin.m, family = "binomial")
+summary(glmm0)
+#run McFadden
+glmm0pr2 = pR2(glmm0)
+glmm0pr2
+```
+
+McFadden value of full model: `r glmm0pr2['McFadden']`
+
+
+```{r, include=F}
+#perform logistic regression variable hosp
+glmm01<-glm(outcome ~ hosp, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variable age
+glmm02<-glm(outcome ~ agecat, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variable hichol
+glmm03<-glm(outcome ~ hichol, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variable yronset
+glmm04<-glm(outcome ~ yronsetcat, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variable stroke
+glmm05<-glm(outcome ~ stroke, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variable angina
+glmm06<-glm(outcome ~ angina, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variable premi
+glmm07<-glm(outcome ~ premi, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variable diabetes
+glmm08<-glm(outcome ~ diabetes, data = monica.na.bin.m, family = "binomial")
+
+#run McFadden
+glmm01pr2 = pR2(glmm01)
+glmm01pr2
+glmm02pr2 = pR2(glmm02)
+glmm02pr2
+glmm03pr2 = pR2(glmm03)
+glmm03pr2
+glmm04pr2 = pR2(glmm04)
+glmm04pr2
+glmm05pr2 = pR2(glmm05)
+glmm05pr2
+glmm06pr2 = pR2(glmm06)
+glmm06pr2
+glmm07pr2 = pR2(glmm07)
+glmm07pr2
+glmm08pr2 = pR2(glmm08)
+glmm08pr2
+
+```
+
+Univariate results:
+
+|Variable|McFadden|
+|---|---|
+|Hospitalization|`r glmm01pr2['McFadden']`|
+|Age|`r glmm02pr2['McFadden']`|
+|High cholesterol|`r glmm03pr2['McFadden']`|
+|Year onset|`r glmm04pr2['McFadden']`|
+|Stroke|`r glmm05pr2['McFadden']`|
+|Angina|`r glmm06pr2['McFadden']`|
+|Previous myocardial infarction|`r glmm07pr2['McFadden']`|
+|Diabetes|`r glmm08pr2['McFadden']`|
+
+
+```{r, include=F}
+#perform logistic regression variables hosp + hichol
+glmm2<-glm(outcome ~ hosp+hichol, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + stroke
+glmm3<-glm(outcome ~ hosp+stroke, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + agina
+glmm4<-glm(outcome ~ hosp+angina, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + premi
+glmm5<-glm(outcome ~ hosp+premi, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + diabetes
+glmm6<-glm(outcome ~ hosp+diabetes, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + age
+glmm7<-glm(outcome ~ hosp+agecat, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + yronset
+glmm8<-glm(outcome ~ hosp+yronsetcat, data = monica.na.bin.m, family = "binomial")
+
+#run McFadden
+glmm2pr2 = pR2(glmm2)
+glmm2pr2
+glmm3pr2 = pR2(glmm3)
+glmm3pr2
+glmm4pr2 = pR2(glmm4)
+glmm4pr2
+glmm5pr2 = pR2(glmm5)
+glmm5pr2
+glmm6pr2 = pR2(glmm6)
+glmm6pr2
+glmm7pr2 = pR2(glmm7)
+glmm7pr2
+glmm8pr2 = pR2(glmm8)
+glmm8pr2
+```
+
+Highest McGFadden(0.615) corresponds to hosp+hichol.
+
+I add hichol to the model since it improves the model: from roughly 51% to 61.5%
+
+```{r, include=F}
+#perform logistic regression variables hosp + hichol + stroke
+glmm9<-glm(outcome ~ hosp+hichol+stroke, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + + hichol + agina
+glmm10<-glm(outcome ~ hosp+hichol+angina, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + + hichol + premi
+glmm11<-glm(outcome ~ hosp+hichol+premi, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + + hichol + diabetes
+glmm12<-glm(outcome ~ hosp+hichol+diabetes, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + + hichol + age
+glmm13<-glm(outcome ~ hosp+hichol+agecat, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + + hichol + yronset
+glmm14<-glm(outcome ~ hosp+hichol+yronsetcat, data = monica.na.bin.m, family = "binomial")
+
+#run McFadden
+glmm9pr2 = pR2(glmm9)
+glmm9pr2
+glmm10pr2 = pR2(glmm10)
+glmm10pr2
+glmm11pr2 = pR2(glmm11)
+glmm11pr2
+glmm12pr2 = pR2(glmm12)
+glmm12pr2
+glmm13pr2 = pR2(glmm13)
+glmm13pr2
+glmm14pr2 = pR2(glmm14)
+glmm14pr2
+```
+
+Highest McFadden (0.633) corresponds to hosp+hichol+angina, I add angina to the model since it improves the model: from roughly 61.5% to 63.3%
+
+```{r, include=F}
+#perform logistic regression variables hosp + + hichol + agina + stroke
+glmm15<-glm(outcome ~ hosp+hichol+angina+stroke, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + + hichol + angina + premi
+glmm16<-glm(outcome ~ hosp+hichol+angina+premi, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + + hichol + angina + diabetes
+glmm17<-glm(outcome ~ hosp+hichol+angina+diabetes, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + + hichol + angina + age
+glmm18<-glm(outcome ~ hosp+hichol+angina+agecat, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + + hichol + angina + yronset
+glmm19<-glm(outcome ~ hosp+hichol+angina+yronsetcat, data = monica.na.bin.m, family = "binomial")
+
+#run McFadden
+glmm15pr2 = pR2(glmm15)
+glmm15pr2
+glmm16pr2 = pR2(glmm16)
+glmm16pr2
+glmm17pr2 = pR2(glmm17)
+glmm17pr2
+glmm18pr2 = pR2(glmm18)
+glmm18pr2
+glmm19pr2 = pR2(glmm19)
+glmm19pr2
+```
+
+Highest McFadden (0.642) corresponds to hosp+hichol+angina+agecat, I add age to the model since it improves the model: from roughly 61.5% to 64.2%
+
+
+```{r, include=F}
+#perform logistic regression variables hosp + hichol + agina + age + stroke
+glmm20<-glm(outcome ~ hosp+hichol+angina+agecat+stroke, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + hichol + angina + age + premi
+glmm21<-glm(outcome ~ hosp+hichol+angina+agecat+premi, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + hichol + angina + age + diabetes
+glmm22<-glm(outcome ~ hosp+hichol+angina+agecat+diabetes, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + hichol + angina + age + yronset
+glmm23<-glm(outcome ~ hosp+hichol+angina+agecat+yronsetcat, data = monica.na.bin.m, family = "binomial")
+
+#run McFadden
+glmm20pr2 = pR2(glmm20)
+glmm20pr2
+glmm21pr2 = pR2(glmm21)
+glmm21pr2
+glmm22pr2 = pR2(glmm22)
+glmm22pr2
+glmm23pr2 = pR2(glmm23)
+glmm23pr2
+```
+
+Highest McFadden (0.650) corresponds to hosp+hichol+angina+agecat+premi, I add age to the model since it improves the model: from roughly 64.2% to 65.0%
+
+
+
+```{r, include=F}
+#perform logistic regression variables hosp + hichol + agina + age + premi + stroke
+glmm24<-glm(outcome ~ hosp+hichol+angina+agecat+premi+stroke, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + hichol + angina + age + premi + diabetes
+glmm25<-glm(outcome ~ hosp+hichol+angina+agecat+premi+diabetes, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + hichol + angina + age + premi + yronset
+glmm26<-glm(outcome ~ hosp+hichol+angina+agecat+premi+yronset, data = monica.na.bin.m, family = "binomial")
+
+#run McFadden
+glmm24pr2 = pR2(glmm24)
+glmm24pr2
+glmm25pr2 = pR2(glmm25)
+glmm25pr2
+glmm26pr2 = pR2(glmm26)
+glmm26pr2
+```
+
+Highest McFadden (0.657) corresponds to hosp+hichol+angina+agecat+premi+stroke, I add stroke to the model since it improves the model: from roughly 65.0% to 65.7%
+
+
+
+```{r, include=F}
+#perform logistic regression variables hosp + hichol + agina + age + premi + stroke + diabetes
+glmm27<-glm(outcome ~ hosp+hichol+angina+agecat+premi+stroke+diabetes, data = monica.na.bin.m, family = "binomial")
+#perform logistic regression variables hosp + hichol + angina + age + premi + stroke + yronset
+glmm28<-glm(outcome ~ hosp+hichol+angina+agecat+premi+stroke+yronset, data = monica.na.bin.m, family = "binomial")
+
+#run McFadden
+glmm27pr2 = pR2(glmm27)
+glmm27pr2
+glmm28pr2 = pR2(glmm28)
+glmm28pr2
+```
+
+Highest McFadden (0.661) corresponds to hosp+hichol+angina+agecat+premi+stroke+yronset, I add yronset to the model since it improves the model: from roughly 65.7% to 66.1%
+
+
+```{r, include=F}
+#detach("package:pROC", unload = T)
+#detach("package:pscl", unload = T)
+```
+
+
+
+
+# KNN:
+
+```{r echo=F, include=F}
+monica.na <- monica
+monica.na <- na_if(monica.na, 'nk')
+```
+
+
+```{r echo=F, include=F}
+# Prepare the data set
+# make copy named 'monica_class', drop extra columns and drop missing values
+monica_class <- monica.na
+monica_class$X <- NULL
+monica_class <- monica_class[complete.cases(monica_class),]
+sum(is.na(monica_class))
+# Create categorical variable for year of onset and drop extra columns
+monica_class$yronsetcat <- cut(monica_class$yronset, c(8.45, 89.5, 94.5))
+monica_class$agecat <- cut(monica_class$age, c(34.5, 39.5, 49.5, 59.5, 69.5))
+monica_class$yronset <- NULL
+monica_class$age <- NULL
+# outcome as factor
+monica_class$outcome <- as.factor(monica_class$outcome)
+# dummy code categorical variables with 2 levels
+monica_class$sex <- ifelse(monica_class$sex == 'f', 1,0)
+monica_class$premi <- ifelse(monica_class$premi == 'y',1,0)
+monica_class$diabetes <- ifelse(monica_class$diabetes == 'y',1,0)
+monica_class$highbp <- ifelse(monica_class$highbp == 'y',1,0)
+monica_class$hichol <- ifelse(monica_class$hichol == 'y',1,0)
+monica_class$angina <- ifelse(monica_class$angina == 'y',1,0)
+monica_class$stroke <- ifelse(monica_class$stroke == 'y',1,0)
+monica_class$hosp <- ifelse(monica_class$hosp == 'y',1,0)
+monica_class$yronsetcat <- ifelse(monica_class$yronsetcat == '(8.45,89.5]',1,0)
+# dummy code categorical values with 3 levels or more
+monica_class$smstat <- as.numeric(revalue(monica_class$smstat, c("n"=0, "x"=1,"c"=2))) 
+monica_class$agecat <- as.numeric(revalue(monica_class$agecat, c("(34.5,39.5]"=0, "(39.5,49.5]"=1,
+                                                          "(49.5,59.5]"=2, "(59.5,69.5]"=3)))
+str(monica_class)
+
+```
+
+At random, we have an 34.8% chance of classifying correctly outcome=dead.
+
+```{r echo=F}
+table(monica_class$`outcome`)[1]/ sum(table(monica_class$`outcome`))*100
+```
+
+Before using the classifier, we can see that, at random, we have 34.8% chance of classifying "outcome = dead" correctly.
+
+Let's split the data into training and test sets. We divided 70% of the data into the training set and the remaining 30% into the test set.
+```{r echo=F, include=F}
+set.seed(1) #set seed to make the partition reproducible
+monica_sample = sample(1:nrow(monica_class), round(0.7 * nrow(monica_class), 0), replace = FALSE)
+length(monica_sample) / nrow(monica_class) # Check training set has 70% of data
+monica_train <- monica_class[monica_sample, ]
+monica_test <- monica_class[-monica_sample, ]
+nrow(monica_test)
+nrow(monica_train)
+```
+
+```{r echo=F, include=F}
+# set Y labels
+monica.trainLabels <- monica_class[monica_sample, 1]
+monica.testLabels <- monica_class[-monica_sample, 1]
+length(monica.testLabels)
+length(monica.trainLabels)
+```
+
+## Classifier with 3-nearest neighbors
+
+```{r echo=F, warning=F}
+# k=3
+# Run the model using `class` package.
+predict3NN = knn(train= monica_train[, c(2:12)],
+                 test = monica_test[, c(2:12)], 
+                 cl = monica.trainLabels, k = 3)
+
+#table(predict3NN)
+loadPkg("gmodels")
+cross3NN <- CrossTable(monica.testLabels, predict3NN, prop.chisq = FALSE)
+```
+
+* When reading the first row, we see that the model classified 333 of 504 "dead" cases correctly, and it classified 171 of 504 "dead" cases incorrectly (as "live"). 
+
+* The model performed better when classfying "live": the model classified 929 of 963 "live" cases correctly, and 34 cases incorrectly. 
+
+```{r echo=F, include=F}
+# percentage classified correctly
+dead3NN <- round((333/504)*100,1)
+live3NN <- round((929/963)*100,1)
+```
+
+```{r echo=F, include=F}
+# check confusion matrix and accuracy for k = 3
+kNN3_res = table(predict3NN, monica_test$`outcome`)
+#kNN3_res
+#sum(kNN3_res)  #<- the total is all the test examples
+# Select the true positives and true negatives 
+kNN3_res[row(kNN3_res) == col(kNN3_res)]
+# Calculate accuracy rate 
+kNN3_acc = sum(kNN3_res[row(kNN3_res) == col(kNN3_res)]) / sum(kNN3_res)
+kNN3_acc
+```
+
+* The classifier has an accuracy of `r round(kNN3_acc *100,2)` %. 
+
+## Classifier 5-nearest neighbors
+
+```{r echo=F, warning=F}
+# k=5
+predict5NN = knn(train= monica_train[, c(2:12)],
+                 test = monica_test[, c(2:12)], 
+                 cl = monica.trainLabels, k = 5)
+
+#table(predict5NN)
+loadPkg("gmodels")
+cross5NN <- CrossTable(monica.testLabels, predict5NN, prop.chisq = FALSE)
+```
+
+* The model classified 328 of 504 "dead" cases correctly, and 176 cases incorrectly. 
+
+* The model classified 945 of 963 "live" cases correctly, and 18 cases incorrectly. 
+
+```{r echo=F, include=F}
+# percentage classified correctly
+dead5NN <- round((328/504)*100,1)
+live5NN <- round((945/963)*100,1)
+```
+
+```{r echo=F, include=F}
+# check confusion matrix and accuracy for k = 5
+kNN5_res = table(predict5NN, monica_test$`outcome`)
+#kNN5_res
+kNN5_res[row(kNN5_res) == col(kNN5_res)]
+kNN5_acc = sum(kNN5_res[row(kNN5_res) == col(kNN5_res)]) / sum(kNN5_res)
+kNN5_acc
+```
+
+* The classifier has an accuracy of `r round(kNN5_acc *100,2)` %. 
+
+## Classifier with 7-nearest neighbors
+
+```{r echo=F, warning=F}
+# k=7
+predict7NN = knn(train= monica_train[, c(2:12)],
+                 test = monica_test[, c(2:12)], 
+                 cl = monica.trainLabels, k = 7)
+
+#table(predict7NN)
+loadPkg("gmodels")
+cross7NN <- CrossTable(monica.testLabels, predict7NN, prop.chisq = FALSE)
+```
+
+* The model classified 329 of 504 "dead" cases correctly, and 175 cases incorrectly. 
+
+* The model classified 958 of 963 "live" cases correctly, and 5 cases incorrectly. 
+
+```{r echo=F, include=F}
+# percentage classified correctly
+dead7NN <- round((329/504)*100,1)
+live7NN <- round((958/963)*100,1)
+```
+
+```{r echo=F, include=F}
+# check confusion matrix and accuracy for k = 7
+kNN7_res = table(predict7NN, monica_test$`outcome`)
+#kNN7_res
+kNN7_res[row(kNN7_res) == col(kNN7_res)]
+kNN7_acc = sum(kNN7_res[row(kNN7_res) == col(kNN7_res)]) / sum(kNN7_res)
+kNN7_acc
+```
+
+* The classifier has an accuracy of `r round(kNN7_acc *100,2)` %. 
+
+## Predict optimal number of K
+
+```{r echo=F, include=F}
+# function
+chooseK = function(k, train_set, val_set, train_class, val_class){
+  set.seed(1)
+  class_knn = knn(train = train_set,    #<- training set cases
+                  test = val_set,       #<- test set cases
+                  cl = train_class,     #<- category for classification
+                  k = k,                #<- number of neighbors considered
+                  use.all = TRUE)       #<- control ties between class assignments
+                                        #   If true, all distances equal to the kth 
+                                        #   largest are included
+  
+  tab = table(class_knn, val_class)
+  # Calculate the accuracy.
+  accu = sum(tab[row(tab) == col(tab)]) / sum(tab)                         
+  cbind(k = k, accuracy = accu)
+}
+```
+
+```{r echo=F, warning=F}
+knn_different_k = sapply(seq(1, 21, by = 2),  #<- set k to be odd number from 1 to 21
+                         function(x) chooseK(x, 
+                                             train_set = monica_train[, c(2:12)],
+                                             val_set = monica_test[, c(2:12)],
+                                             train_class = monica.trainLabels,
+                                             val_class = monica.testLabels))
+# Reformat the results to graph the results.
+#str(knn_different_k)
+knn_different_k = data.frame(k = knn_different_k[1,],
+                             accuracy = knn_different_k[2,])
+
+# Plot accuracy vs. k.
+# install.packages("ggplot2")
+loadPkg("ggplot2")
+
+ggplot(knn_different_k,
+       aes(x = k, y = accuracy)) +
+  geom_line(color = "green", size = 1.5) +
+  geom_point(size = 3)
+```
+
+As the graph shows, it seems that **7-nearest neighbors** show the greatest improvement in predictive accuracy.
+
+# 2. Classify outcome based on age and risk predictors for female population 
+
+```{r echo=F, include=F}
+# subset women and run KNN all predictors
+monica_class_women <- subset(monica_class, sex==1)
+monica_class_women$sex <- NULL
+str(monica_class_women)
+
+set.seed(1) #set seed to make the partition reproducible
+women_train_rows = sample(1:nrow(monica_class_women), round(0.7 * nrow(monica_class_women), 0), replace = FALSE)
+length(women_train_rows) / nrow(monica_class_women) # Check training set has 70% of data
+women.Train <- monica_class_women[women_train_rows, ]
+women.Test <- monica_class_women[-women_train_rows, ]
+nrow(women.Train)
+nrow(women.Test)
+```
+
+At random, we have an 34.1% chance of correctly picking outcome=dead for female population
+
+```{r echo=F}
+table(monica_class_women$`outcome`)[1]/ sum(table(monica_class_women$`outcome`))*100
+```
+
+```{r echo=F, include=F}
+# set Y labels
+women.trainLabels <- monica_class_women[women_train_rows, 1]
+women.testLabels <- monica_class_women[-women_train_rows, 1]
+length(women.trainLabels)
+length(women.testLabels)
+```
+
+## Predict optimal number of K
+
+```{r echo=F}
+knn_different_k = sapply(seq(1, 21, by = 2),  #<- set k to be odd number from 1 to 21
+                         function(x) chooseK(x, 
+                                             train_set = women.Train[, c(2:11)],
+                                             val_set = women.Test[, c(2:11)],
+                                             train_class = women.trainLabels,
+                                             val_class = women.testLabels))
+# Reformat the results to graph the results.
+#str(knn_different_k)
+knn_different_k = data.frame(k = knn_different_k[1,],
+                             accuracy = knn_different_k[2,])
+
+# Plot accuracy vs. k.
+# install.packages("ggplot2")
+loadPkg("ggplot2")
+
+ggplot(knn_different_k,
+       aes(x = k, y = accuracy)) +
+  geom_line(color = "red", size = 1.5) +
+  geom_point(size = 3)
+```
+
+As the graph shows, it seems that 3-nearest neighbors show the greatest improvement in predictive accuracy for the female population.
+
+
+## Classifier with 3-nearest neighbors
+
+```{r echo=F, warning=F}
+# k=3
+# Women
+predict3NN.women = knn(train= women.Train[, c(2:11)],
+                 test = women.Test[, c(2:11)], 
+                 cl = women.trainLabels, k = 3)
+
+#table(predict3NN)
+loadPkg("gmodels")
+cross3NN.women <- CrossTable(women.testLabels, predict3NN.women, prop.chisq = FALSE)
+```
+
+* The model classified 72 of 126 "dead" cases correctly, and it classified 54 cases incorrectly. 
+
+* The model classified 254 of 263 "live" cases correctly, and 9 cases incorrectly. 
+
+```{r echo=F, include=F}
+# percentage classified correctly
+dead3NN.women <- round((72/126)*100,1)
+live3NN.women <- round((254/263)*100,1)
+dead3NN.women
+live3NN.women
+```
+
+```{r echo=F, include=F}
+# check confusion matrix and accuracy for k = 3, women
+kNN3_res.women = table(predict3NN.women, women.Test$`outcome`)
+#kNN3_res
+#sum(kNN3_res)  
+# Select the true positives and true negatives 
+kNN3_res.women[row(kNN3_res.women) == col(kNN3_res.women)]
+# Calculate accuracy rate 
+kNN3_acc.women = sum(kNN3_res.women[row(kNN3_res.women) == col(kNN3_res.women)]) / sum(kNN3_res.women)
+kNN3_acc.women
+```
+
+* The classifier has an accuracy of `r round(kNN3_acc.women*100,2)`%.
+
+## Subset significant risk factors for women
+
+We ran the classifier only with those predictors that were significant for women (according to the results of the logistic regression from the first part of the project), to assess the impact in the predictive accuracy of the model. The predictors are: diabetes, high cholesterol, stroke, hospitalization, year of onset, and age of diagnosis. 
+
+```{r echo=F, include=F}
+w.sub <- subset(monica_class_women, select = c("outcome","diabetes","hichol","stroke","hosp","yronsetcat","agecat"))
+str(w.sub)
+```
+
+```{r echo=F, warning=F}
+# split the data into training (70%) and test (30%)
+set.seed(1) 
+w.sub.trainRows = sample(1:nrow(w.sub), round(0.7 * nrow(w.sub), 0), replace = FALSE)
+# Create test and training sets
+w.sub.Train = w.sub[w.sub.trainRows, ]
+w.sub.Test = w.sub[-w.sub.trainRows, ]
+#nrow(w.sub.Test)
+# Split outcome variables into training and tests 
+w.sub.trainLabels <- w.sub[w.sub.trainRows, 1]
+w.sub.testLabels <- w.sub[-w.sub.trainRows, 1]
+
+# Run the model with class package and with k=3
+predict3NN.w.sub = knn(train= w.sub.Train[, c(2:7)],
+                 test = women.Test[, c(2:7)], 
+                 cl = women.trainLabels, k = 3)
+
+loadPkg("gmodels")
+cross3NN.w.sub <- CrossTable(w.sub.testLabels, predict3NN.w.sub, prop.chisq = FALSE)
+```
+
+The model is not a good fit, especially for outcome=dead:
+
+* The model classified 14 of 126 "dead" cases correctly, and it classified 112 cases incorrectly. 
+
+* The model classified 250 of 263 "live" cases correctly, and 13 cases incorrectly. 
+
+```{r echo=F, include=F}
+# percentage classified correctly
+dead3NN.w.sub <- round((14/126)*100,1)
+live3NN.w.sub <- round((250/263)*100,1)
+100-dead3NN.w.sub
+live3NN.w.sub
+
+```
+
+```{r echo=F, include=F}
+# check confusion matrix and accuracy for k = 3, women-subset 
+kNN3_res.w.sub = table(predict3NN.w.sub, w.sub.Test$`outcome`)
+#kNN3_res
+#sum(kNN3_res)  
+# Select the true positives and true negatives 
+kNN3_res.w.sub[row(kNN3_res.w.sub) == col(kNN3_res.w.sub)]
+# Calculate accuracy rate 
+kNN3_acc.w.sub = sum(kNN3_res.w.sub[row(kNN3_res.w.sub) == col(kNN3_res.w.sub)]) / sum(kNN3_res.w.sub)
+kNN3_acc.w.sub
+```
+
+* The classifier has an accuracy of `r round(kNN3_acc.w.sub*100,2)`%.
+
+# 3. Classify outcome based on age and risk predictors for male population 
+
+```{r echo=F, include=F}
+# subset men and run KNN with all predictors
+monica_class_men <- subset(monica_class, sex==0)
+monica_class_men$sex <- NULL
+str(monica_class_men)
+
+set.seed(1) #set seed to make the partition reproducible
+men_train_rows = sample(1:nrow(monica_class_men), round(0.7 * nrow(monica_class_men), 0), replace = FALSE)
+length(men_train_rows) / nrow(monica_class_men) # Check training set has 70% of data
+men.Train <- monica_class_men[men_train_rows, ]
+men.Test <- monica_class_men[-men_train_rows, ]
+nrow(men.Train)
+nrow(men.Test)
+```
+
+At random, we have an 35% chance of correctly picking outcome=dead for male population.
+
+```{r echo=F}
+table(monica_class_men$`outcome`)[1]/ sum(table(monica_class_men$`outcome`))*100
+```
+
+```{r echo=F, include=F}
+# set Y labels
+men.trainLabels <- monica_class_men[men_train_rows, 1]
+men.testLabels <- monica_class_men[-men_train_rows, 1]
+length(men.trainLabels)
+length(men.testLabels)
+```
+
+## Predict optimal number of K
+
+```{r echo=F}
+knn_different_k = sapply(seq(1, 21, by = 2),  #<- set k to be odd number from 1 to 21
+                         function(x) chooseK(x, 
+                                             train_set = men.Train[, c(2:11)],
+                                             val_set = men.Test[, c(2:11)],
+                                             train_class = men.trainLabels,
+                                             val_class = men.testLabels))
+# Reformat the results to graph the results.
+#str(knn_different_k)
+knn_different_k = data.frame(k = knn_different_k[1,],
+                             accuracy = knn_different_k[2,])
+
+# Plot accuracy vs. k.
+# install.packages("ggplot2")
+loadPkg("ggplot2")
+
+ggplot(knn_different_k,
+       aes(x = k, y = accuracy)) +
+  geom_line(color = "purple", size = 1.5) +
+  geom_point(size = 3)
+```
+
+As the graph shows, it seems that 13-nearest neighbors show the greatest improvement in predictive accuracy for the male population.
+
+## Classifier with 13-nearest neighbors
+
+```{r echo=F}
+# k=13
+# men
+predict13NN.men = knn(train= men.Train[, c(2:11)],
+                 test = men.Test[, c(2:11)], 
+                 cl = men.trainLabels, k = 13)
+
+#table(predict13NN)
+loadPkg("gmodels")
+cross13NN.men <- CrossTable(men.testLabels, predict13NN.men, prop.chisq = FALSE)
+```
+
+* The model classified 247 of 364 "dead" cases correctly, and it classified 117 cases incorrectly. 
+
+* The model classified 712 of 713 "live" cases correctly, and 1 case incorrectly. 
+
+```{r echo=F, include=F}
+# percentage classified correctly
+dead13NN.men <- round((247/364)*100,1)
+live13NN.men <- round((712/713)*100,1)
+dead13NN.men
+live13NN.men
+```
+
+```{r echo=F, include=F}
+# check confusion matrix and accuracy for k = 3, women
+kNN13_res.men = table(predict13NN.men, men.Test$`outcome`)
+#kNN13_res.men
+#sum(kNN13_res.men)  
+# Select the true positives and true negatives 
+kNN13_res.men[row(kNN13_res.men) == col(kNN13_res.men)]
+# Calculate accuracy rate 
+kNN13_acc.men = sum(kNN13_res.men[row(kNN13_res.men) == col(kNN13_res.men)]) / sum(kNN13_res.men)
+kNN13_acc.men
+```
+
+* The classifier has an accuracy of `r round(kNN13_acc.men*100,2)`%. 
+
+## Subset significant risk factors for men
+
+We ran the classifier only with those predictors that were significant for men (according to the results of the logistic regression from the first part of the project), to assess the impact in the predictive accuracy of the model. The predictors are: previous myocardial infarction, smoking status, angina, hospitalization, year of onset, and age of diagnosis. 
+
+```{r echo=F, include=F}
+#Let's run the model for women only for those risk factors that are statistically dependent (part 1 of project)
+# premi, smstat, angina, hosp, yronsetcat, and agecat 
+m.sub <- subset(monica_class_men, select = c("outcome","premi","smstat","angina","hosp","yronsetcat","agecat"))
+str(m.sub)
+```
+
+
+```{r echo=F}
+# split the data into training (70%) and test (30%)
+set.seed(1) 
+m.sub.trainRows = sample(1:nrow(m.sub), round(0.7 * nrow(m.sub), 0), replace = FALSE)
+# Create test and training sets
+m.sub.Train = m.sub[m.sub.trainRows, ]
+m.sub.Test = m.sub[-m.sub.trainRows, ]
+#nrow(w.sub.Test)
+# Split outcome variables into training and tests 
+m.sub.trainLabels <- m.sub[m.sub.trainRows, 1]
+m.sub.testLabels <- m.sub[-m.sub.trainRows, 1]
+
+# Run the model with class package and with k=3
+predict13NN.m.sub = knn(train= m.sub.Train[, c(2:7)],
+                 test = men.Test[, c(2:7)], 
+                 cl = men.trainLabels, k = 13)
+
+loadPkg("gmodels")
+cross13NN.m.sub <- CrossTable(m.sub.testLabels, predict13NN.m.sub, prop.chisq = FALSE)
+```
+
+The model is not a good fit, especially for outcome=dead:
+
+* The model classified 61 of 364 "dead" cases correctly, and it classified 303 cases incorrectly. 
+
+* The model classified 653 of 713 "live" cases correctly, and 60 cases incorrectly. 
+
+```{r echo=F, include=F}
+# percentage classified correctly
+dead13NN.m.sub <- round((61/364)*100,1)
+live13NN.m.sub <- round((653/713)*100,1)
+dead13NN.m.sub
+live13NN.m.sub
+```
+
+```{r echo=F, include=F}
+# check confusion matrix and accuracy for k = 3, women-subset 
+kNN13_res.m.sub = table(predict13NN.m.sub, m.sub.Test$`outcome`)
+#kNN3_res
+#sum(kNN3_res)  
+# Select the true positives and true negatives 
+kNN13_res.m.sub[row(kNN13_res.m.sub) == col(kNN13_res.m.sub)]
+# Calculate accuracy rate 
+kNN13_acc.m.sub = sum(kNN13_res.m.sub[row(kNN13_res.m.sub) == col(kNN13_res.m.sub)]) / sum(kNN13_res.m.sub)
+kNN13_acc.m.sub
+```
+
+* The classifier has an accuracy of `r round(kNN13_acc.m.sub*100,2)`%.
+
+# Summary for KNN:
+
+## Classify outcome based on age, sex, and risk predictors
+
+| k | Accuracy|'dead' correctly classified | 'live' correctly classified| 
+|---|----------|-----------|--------|
+|3|`r round(kNN3_acc*100,2)`%|`r dead3NN`% |`r live3NN`%|
+|5|`r round(kNN5_acc*100,2)`%|`r dead5NN`% |`r live5NN`%|
+|7|`r round(kNN7_acc*100,2)`%|`r dead7NN`% |`r live7NN`%|
+
+
+## Classify outcome based on age and risk predictors stratified by sex
+
+|Sex| k |Accuracy=All Risk Factors| Accuracy=subset of risk factors|
+|--|----|-------|-------|
+|Female| 3| `r round(kNN3_acc.women*100,2)`% |`r round(kNN3_acc.w.sub*100,2)`%|
+|Male|13|`r round(kNN13_acc.men*100,2)`%|`r round(kNN13_acc.m.sub*100,2)`%|
+
+
+
+
+### DECISION TREES:
+
+
+```{r processing1, include=F}
+library(dplyr)
+library(ggplot2)
+library(plyr)
+library(corrplot)
+require(tree)
+library(rpart)
+library(randomForest)
+knitr::opts_chunk$set(echo = TRUE)
+monica <- data.frame(read.csv("D:/GWU/INRO TO DATA SCIENCE/PROJECT/monica.csv", header = TRUE, stringsAsFactors = T))
+#library needed for decision trees
+library(ISLR)
+#data(package="ISLR")
+#Copy dataset
+monica.na <- monica
+```
+
+**FEATURE SELECTION**
+
+## Importing needed packages:
+
+```{r libraries, include=FALSE}
+library(ISLR)
+library(knitr)
+library(printr)
+library(leaps)
+library(C50)
+#library(RWeka)
+library(rpart)
+library(rpart.plot)
+library(party)
+library(caret)
+library(dplyr)
+library("rattle")
+```
+
+
+```{r , echo=FALSE, include=F}
+#Subset by sex
+monica.f <- subset(monica.na, sex == 'f')
+monica.m <- subset(monica.na, sex == 'm')
+str(monica.m)
+str(monica.f)
+```
+
+## FEATURE SELECTION FOR SUBSET OF FEMALES:
+```{r featuresubsetselectionf,warning=FALSE, echo=FALSE,include=TRUE}
+regfit.full = regsubsets(outcome ~ ., data = monica.f,nvmax = 14)
+summary(regfit.full)
+```
+
+```{r, include=TRUE}
+plot(regfit.full,scale="bic",main="Bayesian information criterion for Females")
+```
+
+For females according to BIC yronset, angina and hosp are the most significant.
+
+
+## FEATURE SELECTION FOR SUBSET OF MALES:
+
+```{r featuresubsetselectionm, warning=FALSE,echo=FALSE ,include=TRUE}
+regfit.full = regsubsets(outcome ~ ., data = monica.m,nvmax = 14)
+summary(regfit.full)
+```
+
+
+```{r, include=TRUE}
+plot(regfit.full,scale="bic",main="Bayesian information criterion for Males")
+```
+
+For males according to BIC yronset, premi, smstat, highbp, hichol, stroke and hosp are the most significant.
+
+
+
+
+**DECISION TREES**
+
+#### Decision trees for females subsetting by: yronset,hosp,angina.
+
+```{r dctrees2, echo=F,include=TRUE}
+# tree model for females
+modelf<- rpart(outcome~yronset+hosp+angina, data=monica.f)
+par(xpd = NA, mar = rep(0.7, 4)) 
+plot(modelf, compress = TRUE)
+text(modelf, cex = 0.7, use.n = TRUE, fancy = TRUE, all = TRUE)
+rpart.plot(modelf, extra = 104, nn = TRUE)
+fancyRpartPlot(modelf)
+```
+
+
+
+```{r, include=F}
+fullmodelf <- rpart(outcome~., data=monica.f)
+par(xpd = NA, mar = rep(0.7, 4)) 
+plot(fullmodelf, compress = TRUE)
+text(fullmodelf, cex = 0.7, use.n = TRUE, fancy = FALSE, all = TRUE)
+rpart.plot(fullmodelf, extra = 104, nn = TRUE)
+fancyRpartPlot(fullmodelf)
+```
+
+#### Decision tree for females using all the features.
+
+
+```{r, include=T}
+fulltreeff <- C5.0(outcome~., data=monica.f)
+plot(fulltreeff)
+```
+
+## Accuracy measure:
+
+### for subset of features:
+```{r acctreemsub2, include=T}
+loadPkg("caret") 
+cm1 = confusionMatrix( predict(modelf, type = "class"), reference = monica.f[, "outcome"] )
+cm1
+```
+
+### for the entire dataset:
+
+```{r accfullf, include=T}
+loadPkg("caret") 
+cmf = confusionMatrix( predict(fullmodelf, type = "class"), reference = monica.f[, "outcome"] )
+cmf
+```
+
+
+
+#### Decision trees for males subsetting by: yronset,premi,smstat,highbp,hichol,stroke,hosp.
+```{r dctrees3, include=TRUE}
+# tree model for males
+modelm <- rpart(outcome~yronset+premi+smstat+highbp+hichol+stroke+hosp, data=monica.m)
+par(xpd = NA, mar = rep(0.7, 4)) 
+plot(modelm, compress = TRUE)
+text(modelm, cex = 0.7, use.n = TRUE, fancy = FALSE, all = TRUE)
+rpart.plot(modelm, extra = 104, nn = TRUE)
+fancyRpartPlot(modelm)
+```
+
+
+```{r, include=F}
+
+fullmodelm <- rpart(outcome~., data=monica.m)
+par(xpd = NA, mar = rep(0.7, 4)) 
+plot(modelm, compress = TRUE)
+text(modelm, cex = 0.7, use.n = TRUE, fancy = FALSE, all = TRUE)
+rpart.plot(modelm, extra = 104, nn = TRUE)
+fancyRpartPlot(modelm)
+```
+
+
+
+#### Decision tree for males using all the features.
+```{r, include=T}
+
+fulltreemm <- C5.0(outcome~., data=monica.m)
+plot(fulltreemm)
+
+```
+
+## Accuracy measure:
+
+
+### for subset of features:
+
+```{r acctreemsub3, include=T}
+loadPkg("caret") 
+cm = confusionMatrix( predict(modelm, type = "class"), reference = monica.m[, "outcome"] )
+cm
+```
+
+### for the entire dataset:
+
+```{r accfullm, include=T}
+loadPkg("caret") 
+cmm = confusionMatrix( predict(fullmodelm, type = "class"), reference = monica.m[, "outcome"] )
+cmm
+```
+
+
+
+## Splitting the data into training and testing data stratified by sex(females):
+
+```{r traintestm, include=TRUE}
+set.seed(1234)
+train_index <- sample(seq_len(nrow(monica.f)), size = 0.8*nrow(monica.f))
+monica.f_train<-monica.f[train_index, ]
+monica.f_test<-monica.f[-train_index, ]
+```
+
+
+```{r traintestm12, include=TRUE}
+set.seed(1234)
+train_index <- sample(seq_len(nrow(monica.m)), size = 0.8*nrow(monica.m))
+monica.m_train<-monica.m[train_index, ]
+monica.m_test<-monica.m[-train_index, ]
+```
+
+
+## Prediction and accuracy measure:
+**accuracy measure for tree for full dataset statified by sex(female)**
+
+```{r pred_evalfullf, include=TRUE}
+monica.f_pred<-predict(fulltreeff, monica.f_test[ ,-c(2)])  #elimnating outcome variable which would be our predictor 
+confusionMatrix(table(monica.f_pred, monica.f_test$outcome))
+```
+
+**accuracy measure for tree for full dataset statified by sex(male)**
+
+```{r pred_evalfullm, include=TRUE}
+monica.m_pred<-predict(fulltreemm, monica.m_test[ ,-c(2)])  #elimnating outcome variable which would be our predictor 
+confusionMatrix(table(monica.m_pred, monica.m_test$outcome))
+```
+
+
+
+## Splitting the data into training and testing data stratified by sex(males):
+
+```{r traintestm1, include=TRUE}
+set.seed(1234)
+train_index <- sample(seq_len(nrow(monica.m)), size = 0.8*nrow(monica.m))
+monica.m_train<-monica.m[train_index, ]
+monica.m_test<-monica.m[-train_index, ]
+```
+
+
+
+**RANDOM FOREST**
+
+## For females:
+
+```{r randomforestf, include=T}
+#Subset by sex
+monica.no.na<-monica
+monica.no.na<-subset(monica.no.na, na.rm = TRUE)
+monica.f <- subset(monica.no.na, sex == 'f')
+set.seed(100)
+train <- sample(nrow(monica.f), 0.7*nrow(monica.f), replace = FALSE)
+TrainSet <- monica.f[train,]
+ValidSet <- monica.f[-train,]
+summary(TrainSet)
+summary(ValidSet)
+modelff <- randomForest(outcome ~ ., data = TrainSet, importance = TRUE)
+modelff
+```
+
+
+## For males:
+
+```{r randomforestm, include=T}
+#Subset by sex
+monica.no.na<-monica
+monica.no.na<-subset(monica.no.na, na.rm = TRUE)
+monica.m <- subset(monica.no.na, sex == 'm')
+set.seed(100)
+train <- sample(nrow(monica.m), 0.7*nrow(monica.m), replace = FALSE)
+TrainSet <- monica.m[train,]
+ValidSet <- monica.m[-train,]
+summary(TrainSet)
+summary(ValidSet)
+modelmm <- randomForest(outcome ~ ., data = TrainSet, importance = TRUE)
+modelmm
+```
