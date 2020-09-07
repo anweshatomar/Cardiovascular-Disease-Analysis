@@ -1,4 +1,4 @@
-# WHO-MONICA-dataset
+# Cardiovascular Disease Analysis
 Analyzed data using chi square test and logistic regression.
 
 
